@@ -1,0 +1,13 @@
+# Install into a Python 3.12 venv with Airflow's official constraints, which pin
+# the full transitive tree:
+#
+#   uv venv --python 3.12 .venv
+#   source .venv/bin/activate
+#   uv pip install -r requirements.txt \
+#     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt"
+
+apache-airflow[smtp]==3.3.2
+scikit-learn
+pandas
+flask
+pytest
