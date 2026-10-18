@@ -10,6 +10,8 @@ from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
 from flask import Flask, redirect, render_template
 
+from src.assets import XG_MODEL
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set the lowest threshold for the logge
@@ -151,7 +153,9 @@ default_args = {
 dag = DAG(
     dag_id="Airflow_Lab2_Flask",
     default_args=default_args,
-    schedule=None,
+    # Data-aware schedule: this DAG has no clock. It runs when Airflow_Lab2
+    # publishes a new model, replacing the upstream TriggerDagRunOperator.
+    schedule=[XG_MODEL],
     catchup=False,
     is_paused_upon_creation=False,
 )
