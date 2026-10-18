@@ -134,13 +134,16 @@ def select_best_model(results: list, filename: str) -> str:
 
     Takes the list of dicts the mapped build_model instances returned.
     """
-    for r in sorted(results, key=lambda r: -r["roc_auc"]):
+    # Ranked and selected on Brier, not ROC-AUC. ROC-AUC only says the model
+    # orders shots correctly; Brier says the probability itself is honest, and an
+    # xG number nobody can trust is not worth publishing.
+    for r in sorted(results, key=lambda r: r["brier"]):
         print(
             f"{r['training_set']:>20} | {r['n_shots']:>5} shots | "
             f"ROC-AUC {r['roc_auc']:.3f} | Brier {r['brier']:.4f}"
         )
 
-    best = max(results, key=lambda r: r["roc_auc"])
+    best = min(results, key=lambda r: r["brier"])
     published = os.path.join(MODEL_DIR, filename)
     shutil.copyfile(best["model_path"], published)
     print(f"Published {best['training_set']} as {filename}")
