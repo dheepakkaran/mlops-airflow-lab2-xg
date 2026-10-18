@@ -6,9 +6,8 @@ from airflow import DAG
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.smtp.operators.smtp import EmailOperator
-from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
-from airflow.task.trigger_rule import TriggerRule
 
+from src.assets import XG_MODEL
 from src.model_development import (
     load_data,
     data_preprocessing,
@@ -78,25 +77,19 @@ build_save_model_task = PythonOperator(
     dag=dag,
 )
 
+# Emitting the asset here rather than from build_save_model_task means the model
+# is only published once it has been evaluated.
 load_model_task = PythonOperator(
     task_id="load_model_task",
     python_callable=load_model,
     op_args=[separate_data_outputs_task.output, "model.sav"],
-    dag=dag,
-)
-
-# Fire-and-forget trigger so this DAG can finish cleanly.
-trigger_dag_task = TriggerDagRunOperator(
-    task_id="my_trigger_task",
-    trigger_dag_id="Airflow_Lab2_Flask",
-    conf={"message": "Data from upstream DAG"},
-    reset_dag_run=False,
-    wait_for_completion=False,          # don't block
-    trigger_rule=TriggerRule.ALL_DONE,  # still run even if something upstream fails
+    outlets=[XG_MODEL],
     dag=dag,
 )
 
 # ---------- Dependencies ----------
+# There is no trigger task. Airflow_Lab2_Flask is scheduled on the XG_MODEL
+# asset, so it starts when load_model_task succeeds and emits the asset event.
 owner_task >> load_data_task >> data_preprocessing_task >> \
     separate_data_outputs_task >> build_save_model_task >> \
-    load_model_task >> trigger_dag_task
+    load_model_task
