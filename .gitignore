@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Airflow
+airflow_home/
+logs/
+*.db
+*.cfg.bk
+simple_auth_manager_passwords.json.generated
+
+# Pipeline output
+working_data/
+model/
+*.sav
+*.pkl
+
+# macOS
+.DS_Store
