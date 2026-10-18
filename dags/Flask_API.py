@@ -15,10 +15,11 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set the lowest threshold for the logge
 
 # ---------- Config ----------
-# Ensure WEBSERVER points to 'airflow-apiserver' as defined in your compose
-WEBSERVER = os.getenv("AIRFLOW_WEBSERVER", "http://airflow-apiserver:8080")
-AF_USER   = os.getenv("AIRFLOW_USERNAME", "airflow")
-AF_PASS   = os.getenv("AIRFLOW_PASSWORD", "airflow")
+# Defaults target a local `airflow standalone`. Override for Docker Compose,
+# where the API server is reachable as 'airflow-apiserver' with the airflow/airflow user.
+WEBSERVER = os.getenv("AIRFLOW_WEBSERVER", "http://localhost:8080")
+AF_USER   = os.getenv("AIRFLOW_USERNAME", "admin")
+AF_PASS   = os.getenv("AIRFLOW_PASSWORD", "admin")
 TARGET_DAG_ID = os.getenv("TARGET_DAG_ID", "Airflow_Lab2")
 
 # Set up robust paths for Docker Workers

@@ -7,8 +7,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
-WORKING_DIR = "/opt/airflow/working_data"
-MODEL_DIR = "/opt/airflow/model"
+# Output lives at the project root, outside dags/ which Airflow scans.
+# Overridable so the same code still runs under Docker, where AIRFLOW_HOME is /opt/airflow.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+WORKING_DIR = os.getenv("LAB2_WORKING_DIR", os.path.join(PROJECT_ROOT, "working_data"))
+MODEL_DIR = os.getenv("LAB2_MODEL_DIR", os.path.join(PROJECT_ROOT, "model"))
 os.makedirs(WORKING_DIR, exist_ok=True)
 os.makedirs(MODEL_DIR, exist_ok=True)
 
