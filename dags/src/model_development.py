@@ -1,6 +1,7 @@
 # File: src/model_development.py
 import os
 import pickle
+import shutil
 
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
@@ -32,6 +33,10 @@ FEATURES = [
 TARGET = "is_goal"
 SEED = 42
 
+# One model is trained per entry, as parallel mapped task instances. "all" is the
+# pooled baseline the per-tournament models have to beat.
+TRAINING_SETS = ["FIFA World Cup 2022", "UEFA Euro 2024", "all"]
+
 def load_data() -> str:
     """
     Load CSV and persist raw dataframe to a pickle file.
@@ -57,18 +62,17 @@ def data_preprocessing(file_path: str) -> str:
     with open(file_path, "rb") as f:
         df = pickle.load(f)
 
-    X = df[FEATURES]
-    y = df[TARGET]
-
     # Only 9.1% of shots are goals, so stratify to hold that rate in both splits.
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, stratify=y, random_state=SEED
+    # Whole frames are kept, not just FEATURES, because the mapped training tasks
+    # filter on the tournament column.
+    train_df, test_df = train_test_split(
+        df, test_size=0.3, stratify=df[TARGET], random_state=SEED
     )
 
     # No scaling: gradient boosting splits on thresholds, so feature scale is irrelevant.
     out_path = os.path.join(WORKING_DIR, "preprocessed.pkl")
     with open(out_path, "wb") as f:
-        pickle.dump((X_train, X_test, y_train.values, y_test.values), f)
+        pickle.dump((train_df, test_df), f)
     return out_path
 
 def separate_data_outputs(file_path: str) -> str:
@@ -77,15 +81,26 @@ def separate_data_outputs(file_path: str) -> str:
     """
     return file_path
 
-def build_model(file_path: str, filename: str) -> str:
+def build_model(file_path: str, training_set: str) -> dict:
     """
-    Train the xG model and save to MODEL_DIR/filename. Returns model path.
+    Train one xG model on a single training set and score it.
+
+    One mapped task instance runs per entry in TRAINING_SETS. Returns the metrics
+    the reduce step compares, not the model itself, so the XCom stays small.
     """
     with open(file_path, "rb") as f:
-        X_train, X_test, y_train, y_test = pickle.load(f)
+        train_df, test_df = pickle.load(f)
+
+    subset = (
+        train_df
+        if training_set == "all"
+        else train_df[train_df["tournament"] == training_set]
+    )
+
+    X, y = subset[FEATURES], subset[TARGET]
 
     # Balanced weights so the 9% goal class is not drowned out by the misses.
-    weights = compute_sample_weight(class_weight="balanced", y=y_train)
+    weights = compute_sample_weight(class_weight="balanced", y=y)
 
     model = GradientBoostingClassifier(
         n_estimators=200,
@@ -94,31 +109,42 @@ def build_model(file_path: str, filename: str) -> str:
         subsample=0.8,
         random_state=SEED,
     )
-    model.fit(X_train, y_train, sample_weight=weights)
+    model.fit(X, y, sample_weight=weights)
 
-    model_path = os.path.join(MODEL_DIR, filename)
+    # Every model is scored on the same held-out test set, which spans both
+    # tournaments, so the numbers are comparable across mapped instances.
+    proba = model.predict_proba(test_df[FEATURES])[:, 1]
+
+    slug = training_set.lower().replace(" ", "_")
+    model_path = os.path.join(MODEL_DIR, f"model_{slug}.sav")
     with open(model_path, "wb") as f:
         pickle.dump(model, f)
 
-    return model_path
+    return {
+        "training_set": training_set,
+        "model_path": model_path,
+        "n_shots": int(len(subset)),
+        "roc_auc": float(roc_auc_score(test_df[TARGET], proba)),
+        "brier": float(brier_score_loss(test_df[TARGET], proba)),
+    }
 
-def load_model(file_path: str, filename: str) -> int:
+def select_best_model(results: list, filename: str) -> str:
     """
-    Load saved model and test set, print metrics, and return first prediction as int.
+    Reduce step: compare the mapped models and publish the best one as filename.
+
+    Takes the list of dicts the mapped build_model instances returned.
     """
-    with open(file_path, "rb") as f:
-        X_train, X_test, y_train, y_test = pickle.load(f)
+    # Ranked and selected on Brier, not ROC-AUC. ROC-AUC only says the model
+    # orders shots correctly; Brier says the probability itself is honest, and an
+    # xG number nobody can trust is not worth publishing.
+    for r in sorted(results, key=lambda r: r["brier"]):
+        print(
+            f"{r['training_set']:>20} | {r['n_shots']:>5} shots | "
+            f"ROC-AUC {r['roc_auc']:.3f} | Brier {r['brier']:.4f}"
+        )
 
-    model_path = os.path.join(MODEL_DIR, filename)
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
-
-    # Accuracy is meaningless here: always predicting "no goal" already scores 90.9%.
-    # ROC-AUC measures ranking, Brier measures whether the probabilities are honest,
-    # which is the property an xG model lives or dies by.
-    proba = model.predict_proba(X_test)[:, 1]
-    print(f"Test ROC-AUC: {roc_auc_score(y_test, proba):.3f}")
-    print(f"Test Brier score: {brier_score_loss(y_test, proba):.4f}")
-
-    pred = model.predict(X_test)
-    return int(pred[0])
+    best = min(results, key=lambda r: r["brier"])
+    published = os.path.join(MODEL_DIR, filename)
+    shutil.copyfile(best["model_path"], published)
+    print(f"Published {best['training_set']} as {filename}")
+    return published
