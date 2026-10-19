@@ -23,6 +23,8 @@ WEBSERVER = os.getenv("AIRFLOW_WEBSERVER", "http://localhost:8080")
 AF_USER   = os.getenv("AIRFLOW_USERNAME", "admin")
 AF_PASS   = os.getenv("AIRFLOW_PASSWORD", "admin")
 TARGET_DAG_ID = os.getenv("TARGET_DAG_ID", "Airflow_Lab2")
+# The lab hardcoded 5555, which collides with anything else already on that port.
+FLASK_PORT = int(os.getenv("LAB2_FLASK_PORT", "5555"))
 
 # Set up robust paths for Docker Workers
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -141,8 +143,8 @@ def start_flask_app():
     Starts the Flask server. 
     Note: Blocks the worker slot. Disable reloader for Docker.
     """
-    print(f"Starting Flask on 0.0.0.0:5555 checking {WEBSERVER}...", flush=True)
-    app.run(host="0.0.0.0", port=5555, debug=False, use_reloader=False)
+    print(f"Starting Flask on 0.0.0.0:{FLASK_PORT} checking {WEBSERVER}...", flush=True)
+    app.run(host="0.0.0.0", port=FLASK_PORT, debug=False, use_reloader=False)
 
 # ---------- DAG Definition ----------
 default_args = {
@@ -158,6 +160,9 @@ dag = DAG(
     schedule=[XG_MODEL],
     catchup=False,
     is_paused_upon_creation=False,
+    # This task starts a server and holds the port, so a second concurrent run
+    # could only fail on "address already in use".
+    max_active_runs=1,
 )
 
 PythonOperator(
